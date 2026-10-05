@@ -1,0 +1,15 @@
+{
+  "config_sha256": "8430e581ae6b4e14dbd93a143531f67708eb186605e645b24b3b588981f4d817",
+  "small_shift": {
+    "n_pairs": 12,
+    "mean_auc": 0.47931152343750005,
+    "mean_auc_drop": 0.34716308593750006,
+    "mean_shift_ratio": 2.415133654468773
+  },
+  "large_shift": {
+    "n_models": 5,
+    "mean_pooled_auc": 0.7118333333333333,
+    "mean_auc_drop": 0.09394010416666668,
+    "mean_shift_ratio": 6.0244782655372235
+  }
+}

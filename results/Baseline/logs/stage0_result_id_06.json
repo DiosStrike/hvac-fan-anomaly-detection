@@ -1,0 +1,13 @@
+{
+  "model": "id_06",
+  "n_train_clips": 855,
+  "n_eval_clips": 480,
+  "auc": 0.9839648437499999,
+  "best_f1": 0.9580838323353293,
+  "best_threshold": 6.182781322582348,
+  "precision": 0.9195402298850575,
+  "recall": 1.0,
+  "accuracy": 0.9416666666666667,
+  "train_sec": 50.9,
+  "total_sec": 53.7
+}

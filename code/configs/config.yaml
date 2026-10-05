@@ -1,0 +1,267 @@
+# ============================================================================
+# HVAC 2.0 — experiment configuration (single source of truth)
+# Matches proposal/proposal.md v6. On any conflict, the proposal wins and this file is updated.
+# This file holds only "constants and rules"; no training logic.
+# ============================================================================
+
+project: HVAC_2.0
+proposal_version: v6
+seed: 42                      # the one random seed for the whole project (proposal §4.1)
+
+# ---------------------------------------------------------------------------
+# Paths. env selects which block is used; keep colab when running on Colab, set local for local debugging.
+# ---------------------------------------------------------------------------
+paths:
+  env: colab                  # colab | local
+
+  colab:
+    drive_root: /content/drive/MyDrive
+    # Source and target domains are both zips on Drive. Always extract to the Colab local disk /content/data,
+    # never back onto Drive: Drive small-file IO is extremely slow, and it would push thousands of wavs to the cloud.
+    # The local disk is ephemeral and must be re-extracted after a runtime restart -- extraction should be idempotent (skip if the directory exists).
+    extract_root: /content/data
+
+    # Source domain: MIMII 0dB fan
+    mimii_zip: /content/drive/MyDrive/HVAC_fan/0_dB_fan.zip
+    mimii_extract_to: /content/data/mimii
+    mimii_root: /content/data/mimii/fan          # contains id_00/id_02/id_04/id_06
+
+    # Target domain: 180 self-recorded fan clips
+    target_zip: /content/drive/MyDrive/HVAC_fan/raw_audio.zip
+    target_extract_to: /content/data/target
+    target_root: /content/data/target/raw_audio  # contains {condition}/{voltage}/{noise}/
+    recording_log: null                          # inventory check only; metadata comes from filenames
+
+    # Outputs: written back to Drive so they survive runtime restarts
+    outputs_root: /content/drive/MyDrive/HVAC_fan/HVAC2_Results
+
+  local:
+    drive_root: null
+    extract_root: null
+    # Already extracted locally; no zips needed
+    mimii_zip: null
+    mimii_extract_to: null
+    mimii_root: data/mimii/fan
+    target_zip: null
+    target_extract_to: null
+    target_root: data/raw_audio
+    recording_log: data/metadata/recording_log.csv
+    outputs_root: outputs
+
+outputs:
+  # Stages 2+3 total ~1032 train/eval runs. Weights are discarded after use; only CSVs are saved (proposal §7, stage 2)
+  persist_finetuned_weights: false
+  pretrained_models_dir: models        # relative to outputs_root; these 5 weights must be kept
+  results_dir: logs
+  figures_dir: figures
+
+# ---------------------------------------------------------------------------
+# Source domain: MIMII fan 0dB (proposal §4.1)
+# ---------------------------------------------------------------------------
+source_domain:
+  name: MIMII_fan_0dB
+  machine_ids: [id_00, id_02, id_04, id_06]
+
+  # Official counts, used for a startup self-check: scanned file counts must match exactly, else fail immediately
+  official_counts:
+    id_00: {normal: 1011, abnormal: 407}
+    id_02: {normal: 1016, abnormal: 359}
+    id_04: {normal: 1033, abnormal: 348}
+    id_06: {normal: 1015, abnormal: 361}
+
+  # Evaluation set: class ratio 1:2, aligned with the target domain's 60:120 (proposal §3)
+  eval_set:
+    n_normal: 160
+    n_abnormal: 320
+
+  # Training pool = all normal clips of that machine ID − the 160 used by the evaluation set
+  train_pool_size:
+    id_00: 851
+    id_02: 856
+    id_04: 873
+    id_06: 855
+
+  # Merged model: equal contribution from each machine ID
+  merged_model:
+    # Evaluation set must be a subset of each ID's fixed evaluation set; no independent re-draw (proposal §4.1)
+    eval_per_id: {normal: 40, abnormal: 80}
+    # Training set: 215 clips drawn from each ID's "training pool", so the total matches the single-ID models
+    train_per_id: 215
+    train_total: 860
+
+# ---------------------------------------------------------------------------
+# Target domain: 180 self-recorded fan clips (proposal §4.2)
+# ---------------------------------------------------------------------------
+target_domain:
+  name: self_recorded_fan
+  device: Razer Seiren V3 Mini
+
+  conditions: [normal, blocked, imbalance]
+  normal_conditions: [normal]                 # 60 clips, the only part that may enter training
+  abnormal_conditions: [blocked, imbalance]   # 120 clips, evaluation only
+  voltages: ["4V", "8V", "12V"]
+  noise_levels: [quiet, noise]
+  n_runs: 10
+
+  n_clips_total: 180
+  n_normal_total: 60
+  n_abnormal_total: 120
+
+  # Filenames are the single source of truth for metadata; recording_log.csv is only an inventory check
+  # (the csv has 206 rows with duplicates and misaligned columns; after dedup, the 180 filenames form a complete 18×10 grid)
+  filename_pattern: "{condition}_{voltage}_{noise}_run{run:02d}.wav"
+  relpath_pattern: "{condition}/{voltage}/{noise}/{filename}"
+
+# ---------------------------------------------------------------------------
+# Feature extraction (proposal §5, identical to baseline_runner.ipynb)
+# ---------------------------------------------------------------------------
+features:
+  sr: 16000
+  duration_sec: 10
+  n_mels: 64
+  frames: 5           # concatenate 5 adjacent frames
+  n_fft: 1024
+  hop_length: 512
+  power: 2.0
+  input_dim: 320      # = n_mels * frames
+  # Each 10 s clip yields ~309 vectors of dim 320 (313 frames − 5 + 1)
+
+# ---------------------------------------------------------------------------
+# Model architecture (proposal §5)
+# ---------------------------------------------------------------------------
+model:
+  arch: MIMII_Baseline_AE
+  encoder_dims: [320, 64, 64, 8]
+  decoder_dims: [8, 64, 64, 320]
+  bottleneck_dim: 8
+  activation: relu
+  output_activation: none      # official baseline has no activation on the output layer
+  # Layer indices inside the torch module, used by the layer schemes to freeze/unfreeze by name
+  layer_index:
+    encoder_linears: ["encoder.0", "encoder.2", "encoder.4"]   # 320→64, 64→64, 64→8
+    decoder_linears: ["decoder.0", "decoder.2", "decoder.4"]   # 8→64, 64→64, 64→320
+
+# ---------------------------------------------------------------------------
+# Pretraining (stage 0, proposal §5 / §7 stage 0)
+# ---------------------------------------------------------------------------
+pretrain:
+  optimizer: adam
+  lr: 0.001            # torch Adam default, same as baseline_runner.ipynb
+  loss: mse
+  batch_size: 512
+  epochs: 50
+  validation_split: 0.1
+  shuffle: true
+  # Right after training, evaluate once on the model's own 480-clip source eval set and store as the "source baseline" (subtrahend for forgetting)
+  record_source_baseline: true
+
+# ---------------------------------------------------------------------------
+# Fine-tuning (stage 2) — all four layer schemes share one hyperparameter set, not tuned per scheme (proposal §7, stage 2)
+# ---------------------------------------------------------------------------
+finetune:
+  optimizer: adam
+  loss: mse
+  lr: 0.0001           # 1/10 of pretraining lr; at the 40-clip full level the movement budget is still < 2.5% of pretraining
+  epochs: 30           # derived from a step budget: ~750 updates at the 5-clip level, ~5820 at the 40-clip level
+  batch_size: 64       # 512 would give only 4 batches per epoch at the 5-clip level, too few for Adam momentum to warm up
+  source_replay: false          # no source-domain replay (proposal §7, stage 2)
+  early_stopping: false         # no early stopping; rationale in proposal §7, stage 2
+  restart_from_pretrained_each_fold: true   # every LORO fold must restart from the pretrained weights
+
+# ---------------------------------------------------------------------------
+# LORO validation protocol (proposal §6)
+# ---------------------------------------------------------------------------
+loro:
+  applies_to: large_shift_only     # no LORO for small shift (proposal §6.4)
+  n_folds: 10                      # fold k holds out the whole run == k+1
+  fold_key: run                    # determined by runNN in the filename
+  clips_per_fold: 18               # one clip from each of the 18 conditions
+  normals_per_fold: 6
+  abnormals_per_fold: 12
+  max_train_normals: 54            # 60 − 6, which is why the data levels stop at 40
+  report: [pooled, per_fold]       # compute both views (proposal §6.2)
+  per_fold_stats: [mean, std]
+  pooled_normalization: none       # no per-fold normalization; listed as a limitation
+
+# ---------------------------------------------------------------------------
+# Experiment grid (proposal §7, stage 2)
+# ---------------------------------------------------------------------------
+grid:
+  data_levels: [5, 10, 20, 40]
+
+  # Nested sampling: 5 ⊂ 10 ⊂ 20 ⊂ 40 (proposal §4.3)
+  nested_sampling:
+    enabled: true
+    rule: "Candidates are put in a fixed order by a fixed rule; level n takes the first n"
+    # Ordering = sort by filename for a deterministic initial order, then shuffle with a numpy RNG
+    canonical_order: filename_sort_then_shuffle
+    rng: numpy_default_rng
+    # Small shift: order each target ID's training pool once (seed scope includes only the ID)
+    small_shift_seed_scope: [seed, target_id]
+    # Large shift: available clips differ per fold, so each fold is ordered separately (seed scope includes the fold)
+    large_shift_seed_scope: [seed, fold]
+
+  layer_schemes:
+    full:
+      desc: Full fine-tuning
+      trainable: ["encoder.0", "encoder.2", "encoder.4", "decoder.0", "decoder.2", "decoder.4"]
+    decoder_only:
+      desc: Decoder only
+      trainable: ["decoder.0", "decoder.2", "decoder.4"]
+    encoder_only:
+      desc: Encoder only
+      trainable: ["encoder.0", "encoder.2", "encoder.4"]
+    bottleneck_only:
+      desc: Bottleneck-adjacent layers only (the two layers into and out of the bottleneck, 64→8 and 8→64)
+      trainable: ["encoder.4", "decoder.0"]
+
+# ---------------------------------------------------------------------------
+# Experiment enumeration per stage (counts are self-checked at startup by config.py; mismatch raises)
+# ---------------------------------------------------------------------------
+stages:
+  stage0_pretrain:
+    n_models: 5                  # 4 single-ID + 1 merged
+  stage1_frozen_eval:
+    small_shift_pairs: 12        # 4 starts × 3 unseen IDs each
+    large_shift_models: 5        # all 5 models evaluated on large shift (incl. merged)
+    large_shift_folds: 10
+    shift_ratio:
+      aggregation: median
+      denominator: source_eval_normals          # the 160 normals of that ID's eval set
+      numerator_small_shift: target_eval_normals # the 160 normals of the target ID's eval set
+      numerator_large_shift: all_60_normals      # frozen eval has no leakage, so use all 60 clips
+  stage2_finetune:
+    small_shift:
+      starts: 4
+      targets_per_start: 3
+      folds: 1
+      n_configs: 192
+      n_runs: 192
+    large_shift:
+      starts: 5                  # 4 single-ID + 1 merged
+      targets_per_start: 1
+      folds: 10
+      n_configs: 80
+      n_runs: 800
+    n_configs_total: 272
+    n_runs_total: 992
+  stage3_no_pretrain:
+    init: random
+    layer_scheme: full           # random init has no "learned layers", so no layer-scheme variable
+    n_configs: 4
+    folds: 10
+    n_runs: 40
+    source_metrics: null         # no source domain; reported as N/A
+
+total_runs: 1032                 # 992 + 40
+
+# ---------------------------------------------------------------------------
+# Evaluation metrics (proposal §3)
+# ---------------------------------------------------------------------------
+metrics:
+  primary: auc                   # floor is always 0.5, independent of class ratio
+  secondary: best_f1             # max over a scan of all thresholds
+  best_f1_trivial_floor: 0.8     # at a 1:2 class ratio, "predict all abnormal" already gives 0.8
+  n_threshold_scan_points: 1000  # matches the linspace in baseline_runner.ipynb
+  clip_score: mean_mse_over_frames   # per clip = mean reconstruction MSE over all its feature vectors
+  reconstruction_mse_aggregation: median   # threshold shift ratio uses the median

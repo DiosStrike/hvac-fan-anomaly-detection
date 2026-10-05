@@ -1,0 +1,13 @@
+{
+  "model": "merged",
+  "n_train_clips": 860,
+  "n_eval_clips": 480,
+  "auc": 0.7229687499999999,
+  "best_f1": 0.8415446071904128,
+  "best_threshold": 5.16810476839602,
+  "precision": 0.7331786542923434,
+  "recall": 0.9875,
+  "accuracy": 0.7520833333333333,
+  "train_sec": 51.9,
+  "total_sec": 54.1
+}
