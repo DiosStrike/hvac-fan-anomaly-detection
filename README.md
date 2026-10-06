@@ -12,23 +12,24 @@ This is an **independent research project**. See the full write-up in **[report/
 ## Repository structure
 
 ```
-proposal/proposal.md          Research proposal and locked experimental protocol
-code/
-  configs/                    config.yaml (all constants), config.py (loader, self-checks, sampling/LORO logic)
-  notebooks/                  Experiment notebooks (Google Colab)
-    baseline_runner.ipynb       MIMII baseline autoencoder, per machine ID
-    stage0_pretrain.ipynb       Stage 0: pretraining + source-domain baselines (5 models)
-    stage1_domain_shift.ipynb   Stage 1: frozen evaluation under small / large shift
-    stage2_finetune.ipynb       Stage 2: fine-tuning grid (272 configs / 992 runs)
-    stage3_no_pretrain.ipynb    Stage 3: no-pretraining control (4 configs / 40 runs)
-  analysis/                   Scripts that recompute report tables/numbers (and figures) from results/
-data/
-  raw_audio/                  Self-recorded household-fan audio (180 WAV clips)
-  metadata/recording_log.csv  Recording log
-  photos/fan_conditions.png   Photos of the fan in its three operating states
-results/                      Metrics and logs from all stages (CSV / JSON / JSONL)
-report/report.pdf             Final report
-requirements.txt
+hvac-fan-anomaly-detection/
+├── proposal/proposal.md               Research proposal and locked protocol
+├── code/                              Configs, notebooks, analysis scripts
+│   ├── configs/                       config.yaml, config.py (self-checks)
+│   ├── notebooks/                     Experiment notebooks (Google Colab)
+│   │   ├── baseline_runner.ipynb      MIMII baseline AE, per machine ID
+│   │   ├── stage0_pretrain.ipynb      Stage 0: pretraining, source baselines
+│   │   ├── stage1_domain_shift.ipynb  Stage 1: frozen eval, small/large shift
+│   │   ├── stage2_finetune.ipynb      Stage 2: fine-tuning (272 cfg/992 runs)
+│   │   └── stage3_no_pretrain.ipynb   Stage 3: no-pretraining control
+│   └── analysis/                      Recompute report tables from results/
+├── data/
+│   ├── raw_audio/                     Self-recorded fan audio (180 WAV)
+│   ├── metadata/recording_log.csv     Recording log
+│   └── photos/fan_conditions.png      Fan photos, three operating states
+├── results/                           Metrics and logs (CSV/JSON/JSONL)
+├── report/report.pdf                  Final report
+└── requirements.txt
 ```
 
 ## How to run
